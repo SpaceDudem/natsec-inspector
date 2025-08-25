@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  inspector:
+    # Use a Debian‑based Node image so we can install pdftk-java on the fly
+    image: node:20-bookworm
+    working_dir: /app
+    ports:
+      - "8087:8087"
+    environment:
+      # Directory containing your unflattened PDF templates
+      ORIG_TEMPLATES_ROOT: /mnt/original_forms
+      # Port exposed by the Node server
+      PORT: 8087
+    volumes:
+      # Mount the current repo into /app
+      - ./:/app
+      # Read-only mount for your original PDF templates. Adjust host path accordingly.
+      - /mnt/original_forms:/mnt/original_forms:ro
+    command: >
+      bash -lc "set -e
+      # Install pdftk
+      apt-get update -qq && apt-get install -y pdftk-java > /dev/null
+      # Install Node dependencies (only express is needed)
+      npm install express > /dev/null
+      # Start the server
+      node server.js"

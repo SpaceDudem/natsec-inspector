@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inspection Form</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      color: #1f2937;
+    }
+    h1 {
+      margin-bottom: 1rem;
+      font-size: 1.5rem;
+    }
+    .field-row {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 0.75rem;
+    }
+    .field-row label {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .field-row input,
+    .field-row textarea {
+      padding: 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .field-row button.mic-btn {
+      margin-top: 0.25rem;
+      width: 2rem;
+      height: 2rem;
+      border: none;
+      background-color: #e5e7eb;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    #submitContainer {
+      margin-top: 1.5rem;
+    }
+    #submitBtn {
+      padding: 0.75rem 1.5rem;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    #submitBtn:hover {
+      background-color: #1e40af;
+    }
+    .error {
+      color: #b91c1c;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <h1>Inspection Form</h1>
+  <div id="formContainer"></div>
+  <div id="submitContainer" style="display:none;">
+    <button id="submitBtn">Generate Report</button>
+  </div>
+  <script>
+    // Get query parameter by name
+    function getParam(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+    const template = getParam('template');
+    const formContainer = document.getElementById('formContainer');
+
+    if (!template) {
+      const p = document.createElement('p');
+      p.className = 'error';
+      p.textContent = 'Please specify a template filename via ?template=your_template.pdf in the URL.';
+      formContainer.appendChild(p);
+    } else {
+      fetch('/fields?template=' + encodeURIComponent(template))
+        .then(resp => resp.json())
+        .then(data => {
+          if (data.error) {
+            formContainer.innerHTML = '<p class="error">' + data.error + '</p>';
+            return;
+          }
+          if (!data.fields || !data.fields.length) {
+            formContainer.innerHTML = '<p class="error">No fields found in this template.</p>';
+            return;
+          }
+          // Create a form container
+          data.fields.forEach(name => {
+            const row = document.createElement('div');
+            row.className = 'field-row';
+            const label = document.createElement('label');
+            label.setAttribute('for', 'fld_' + name);
+            label.textContent = name;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.name = name;
+            input.id = 'fld_' + name;
+            const mic = document.createElement('button');
+            mic.type = 'button';
+            mic.textContent = '\uD83C\uDFA4';
+            mic.className = 'mic-btn';
+            mic.title = 'Dictate into field';
+            mic.onclick = () => {
+              if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) {
+                alert('Speech recognition not supported in this browser.');
+                return;
+              }
+              const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+              const recognizer = new Rec();
+              recognizer.lang = 'en-US';
+              recognizer.onresult = (e) => {
+                const text = e.results[0][0].transcript;
+                if (input.value) {
+                  input.value += ' ' + text;
+                } else {
+                  input.value = text;
+                }
+              };
+              recognizer.start();
+            };
+            row.appendChild(label);
+            row.appendChild(input);
+            row.appendChild(mic);
+            formContainer.appendChild(row);
+          });
+          document.getElementById('submitContainer').style.display = 'block';
+        })
+        .catch(err => {
+          formContainer.innerHTML = '<p class="error">Failed to load fields: ' + err.message + '</p>';
+        });
+    }
+
+    document.getElementById('submitBtn').addEventListener('click', () => {
+      const data = {};
+      formContainer.querySelectorAll('input').forEach(input => {
+        data[input.name] = input.value;
+      });
+      fetch('/submit?template=' + encodeURIComponent(template), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      })
+        .then(resp => {
+          if (!resp.ok) {
+            return resp.json().then(err => { throw new Error(err.error || 'Error'); });
+          }
+          return resp.blob();
+        })
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'inspection_report.pdf';
+          a.click();
+        })
+        .catch(err => {
+          alert('Error generating report: ' + err.message);
+        });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "natsec-inspector-sidecar",
+  "version": "1.0.0",
+  "description": "Self‑hosted sidecar service for filling PDF inspection reports using pdftk",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
