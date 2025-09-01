@@ -116,6 +116,7 @@
               const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
               const recognizer = new Rec();
               recognizer.lang = 'en-US';
+              
               recognizer.onresult = (e) => {
                 const text = e.results[0][0].transcript;
                 if (input.value) {
@@ -124,7 +125,28 @@
                   input.value = text;
                 }
               };
-              recognizer.start();
+              
+              recognizer.onerror = (e) => {
+                console.error('Speech recognition error:', e.error);
+                if (e.error === 'not-allowed') {
+                  alert('Microphone access denied. Please allow microphone access and try again.');
+                } else if (e.error === 'no-speech') {
+                  alert('No speech detected. Please try again.');
+                } else {
+                  alert('Speech recognition failed: ' + e.error);
+                }
+              };
+              
+              recognizer.onend = () => {
+                // Speech recognition ended normally
+              };
+              
+              try {
+                recognizer.start();
+              } catch (err) {
+                console.error('Failed to start speech recognition:', err);
+                alert('Failed to start speech recognition. Please try again.');
+              }
             };
             row.appendChild(label);
             row.appendChild(input);
