@@ -44,7 +44,7 @@ function validateTemplatePath(template) {
   const normalizedTemplate = path.normalize(template);
   
   // Check for path traversal attempts
-  if (normalizedTemplate.startsWith('..') || normalizedTemplate.includes('..')) {
+  if (normalizedTemplate.startsWith('..')) {
     return null;
   }
   
