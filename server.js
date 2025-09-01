@@ -31,6 +31,43 @@ try {
 }
 
 /**
+ * Validate that a template path is safe and within the allowed directory
+ * @param {string} template relative path of the template
+ * @returns {string|null} absolute path if valid, null if invalid
+ */
+function validateTemplatePath(template) {
+  if (!template || typeof template !== 'string') {
+    return null;
+  }
+  
+  // Normalize the path to resolve any .. or . components
+  const normalizedTemplate = path.normalize(template);
+  
+  // Check for path traversal attempts
+  if (normalizedTemplate.startsWith('..')) {
+    return null;
+  }
+  
+  // Ensure the path is relative
+  if (path.isAbsolute(normalizedTemplate)) {
+    return null;
+  }
+  
+  // Construct the full path
+  const fullPath = path.join(ORIG_ROOT, normalizedTemplate);
+  
+  // Ensure the resolved path is within the allowed directory
+  const resolvedPath = path.resolve(fullPath);
+  const resolvedRoot = path.resolve(ORIG_ROOT);
+  
+  if (!resolvedPath.startsWith(resolvedRoot)) {
+    return null;
+  }
+  
+  return fullPath;
+}
+
+/**
  * Extract the list of AcroForm field names from a given PDF.
  * Uses pdftk and parses the output of `dump_data_fields`.
  *
@@ -100,16 +137,44 @@ function fillPdf(templatePath, data) {
   const tmpdir = os.tmpdir();
   const fdfPath = path.join(tmpdir, `data_${Date.now()}.fdf`);
   const outPath = path.join(tmpdir, `out_${Date.now()}.pdf`);
-  fs.writeFileSync(fdfPath, buildFdf(data));
+  
+  // Cleanup function to ensure temporary files are removed
+  const cleanup = () => {
+    try {
+      if (fs.existsSync(fdfPath)) {
+        fs.unlinkSync(fdfPath);
+      }
+      if (fs.existsSync(outPath)) {
+        fs.unlinkSync(outPath);
+      }
+    } catch (err) {
+      console.warn('Failed to cleanup temporary files:', err.message);
+    }
+  };
+  
+  try {
+    fs.writeFileSync(fdfPath, buildFdf(data));
+  } catch (err) {
+    cleanup();
+    return Promise.reject(err);
+  }
+  
   return new Promise((resolve, reject) => {
     const pdftk = spawn('pdftk', [templatePath, 'fill_form', fdfPath, 'output', outPath, 'flatten']);
+    
+    pdftk.on('error', (err) => {
+      cleanup();
+      reject(new Error(`pdftk spawn failed: ${err.message}`));
+    });
+    
     pdftk.on('close', (code) => {
-      fs.unlink(fdfPath, () => {});
       if (code !== 0) {
+        cleanup();
         return reject(new Error(`pdftk fill_form failed with exit code ${code}`));
       }
+      
       fs.readFile(outPath, (err, buf) => {
-        fs.unlink(outPath, () => {});
+        cleanup();
         if (err) return reject(err);
         resolve(buf);
       });
@@ -129,7 +194,12 @@ app.get('/fields', async (req, res) => {
     if (!template) {
       return res.status(400).json({ error: 'template query parameter is required' });
     }
-    const p = path.join(ORIG_ROOT, template);
+    
+    const p = validateTemplatePath(template);
+    if (!p) {
+      return res.status(400).json({ error: 'invalid template path' });
+    }
+    
     if (!fs.existsSync(p)) {
       return res.status(404).json({ error: 'template not found' });
     }
@@ -173,7 +243,12 @@ app.post('/submit', async (req, res) => {
     if (!template) {
       return res.status(400).json({ error: 'template query parameter is required' });
     }
-    const p = path.join(ORIG_ROOT, template);
+    
+    const p = validateTemplatePath(template);
+    if (!p) {
+      return res.status(400).json({ error: 'invalid template path' });
+    }
+    
     if (!fs.existsSync(p)) {
       return res.status(404).json({ error: 'template not found' });
     }
